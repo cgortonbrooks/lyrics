@@ -1,0 +1,245 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { getArtistPath, getSongLines, getSongs } from '../../lib/songs';
+
+export async function getStaticPaths() {
+	const songs = await getSongs();
+
+	return songs.map((song) => ({
+		params: { slug: song.id },
+		props: { song },
+	}));
+}
+
+const { song } = Astro.props;
+const lines = getSongLines(song);
+---
+
+<Layout title={`${song.data.title} · Play`} description={`Play view for ${song.data.title}`} bodyClass="play-body">
+	<main class="play-shell">
+		<header class="play-controls panel">
+			<div>
+				<p class="eyebrow">Play mode</p>
+				<h1>{song.data.title}</h1>
+				<p>{song.data.artist} · Capo {song.data.capo} · {song.data.chords.join(' · ')}</p>
+			</div>
+			<div class="control-row">
+				<label>
+					<span>Speed</span>
+					<input type="range" min="12" max="120" value="34" step="2" data-speed />
+				</label>
+				<button class="button button--accent" type="button" data-toggle-scroll>Start scroll</button>
+				<a class="pill" href={getArtistPath(song.data.artist)}>Artist</a>
+				<a class="pill" href={`/song/${song.id}/`}>Song</a>
+			</div>
+		</header>
+
+		<section class="play-surface" data-play-surface>
+			<ol class="play-lyrics lyrics-font" data-play-lyrics>
+				{
+					lines.map((line, index) => (
+						<li class:list={['play-line', { spacer: line.trim().length === 0 }]} data-line data-index={index}>
+							{line || ' '}
+						</li>
+					))
+				}
+			</ol>
+		</section>
+	</main>
+
+	<script>
+		const surface = document.querySelector('[data-play-surface]');
+		const speedInput = document.querySelector('[data-speed]');
+		const toggleButton = document.querySelector('[data-toggle-scroll]');
+		const lines = [...document.querySelectorAll('[data-line]')];
+
+		let isRunning = false;
+		let speed = speedInput instanceof HTMLInputElement ? Number(speedInput.value) : 34;
+		let lastTimestamp = 0;
+		let activeLine = null;
+
+		const setActiveLine = () => {
+			if (!(surface instanceof HTMLElement) || lines.length === 0) {
+				return;
+			}
+
+			const center = surface.scrollTop + surface.clientHeight * 0.38;
+			let nearest = lines[0];
+			let smallestDistance = Number.POSITIVE_INFINITY;
+
+			for (const line of lines) {
+				if (!(line instanceof HTMLElement)) {
+					continue;
+				}
+
+				const lineCenter = line.offsetTop + line.offsetHeight / 2;
+				const distance = Math.abs(center - lineCenter);
+				if (distance < smallestDistance) {
+					smallestDistance = distance;
+					nearest = line;
+				}
+			}
+
+			if (activeLine !== nearest) {
+				activeLine?.classList.remove('is-active');
+				nearest.classList.add('is-active');
+				activeLine = nearest;
+			}
+		};
+
+		const tick = (timestamp) => {
+			if (!(surface instanceof HTMLElement) || !isRunning) {
+				lastTimestamp = timestamp;
+				return;
+			}
+
+			if (lastTimestamp === 0) {
+				lastTimestamp = timestamp;
+			}
+
+			const elapsed = timestamp - lastTimestamp;
+			lastTimestamp = timestamp;
+			surface.scrollTop += (speed * elapsed) / 1000;
+			setActiveLine();
+			requestAnimationFrame(tick);
+		};
+
+		speedInput?.addEventListener('input', (event) => {
+			if (event.currentTarget instanceof HTMLInputElement) {
+				speed = Number(event.currentTarget.value);
+			}
+		});
+
+		toggleButton?.addEventListener('click', () => {
+			isRunning = !isRunning;
+			toggleButton.textContent = isRunning ? 'Pause scroll' : 'Start scroll';
+			lastTimestamp = 0;
+			if (isRunning) {
+				requestAnimationFrame(tick);
+			}
+		});
+
+		surface?.addEventListener('scroll', setActiveLine, { passive: true });
+		lines.forEach((line) => {
+			line.addEventListener('click', () => {
+				if (!(surface instanceof HTMLElement) || !(line instanceof HTMLElement)) {
+					return;
+				}
+
+				surface.scrollTo({ top: Math.max(0, line.offsetTop - surface.clientHeight * 0.32), behavior: 'smooth' });
+			});
+		});
+
+		setActiveLine();
+	</script>
+</Layout>
+
+<style>
+	.play-body {
+		overflow: hidden;
+	}
+
+	.play-shell {
+		width: min(100%, 920px);
+		height: 100dvh;
+		padding: 0.75rem;
+		display: grid;
+		grid-template-rows: auto minmax(0, 1fr);
+		gap: 0.75rem;
+	}
+
+	.play-controls {
+		padding: 1rem;
+		display: flex;
+		justify-content: space-between;
+		gap: 1rem;
+		align-items: center;
+	}
+
+	h1,
+	p,
+	ol {
+		margin: 0;
+	}
+
+	h1 {
+		font-size: clamp(1.8rem, 5vw, 3rem);
+	}
+
+	.play-controls p:last-child,
+	.control-row span {
+		color: var(--muted);
+	}
+
+	.control-row {
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
+		flex-wrap: wrap;
+		justify-content: end;
+	}
+
+	.control-row label {
+		display: grid;
+		gap: 0.35rem;
+		min-width: 180px;
+	}
+
+	.play-surface {
+		min-height: 0;
+		overflow-y: auto;
+		scroll-behavior: smooth;
+		padding: 16vh 0 38vh;
+	}
+
+	.play-lyrics {
+		list-style: none;
+		padding: 0;
+		max-width: 18ch;
+		margin: 0 auto;
+		display: grid;
+		gap: 0.7rem;
+		font-size: clamp(1.55rem, 4.1vw, 2.75rem);
+		line-height: 1.25;
+	}
+
+	.play-line {
+		padding: 0.35rem 0.25rem;
+		color: rgba(27, 19, 15, 0.42);
+		transition: color 140ms ease, transform 140ms ease, background-color 140ms ease;
+		border-radius: 14px;
+	}
+
+	.play-line.is-active {
+		color: var(--ink);
+		background: rgba(255, 250, 242, 0.92);
+		transform: scale(1.02);
+		box-shadow: 0 14px 30px rgba(51, 31, 19, 0.12);
+	}
+
+	.play-line.spacer {
+		min-height: 1rem;
+		background: transparent;
+		box-shadow: none;
+	}
+
+	@media (max-width: 720px) {
+		.play-shell {
+			padding: 0.5rem;
+		}
+
+		.play-controls {
+			padding: 0.85rem;
+			flex-direction: column;
+			align-items: start;
+		}
+
+		.control-row {
+			justify-content: start;
+		}
+
+		.play-lyrics {
+			max-width: 100%;
+		}
+	}
+</style>

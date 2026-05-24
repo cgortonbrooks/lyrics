@@ -1,0 +1,107 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { getArtistPath, getArtistSlug, getPlayPath, getSongPath, getSongs } from '../../lib/songs';
+
+export async function getStaticPaths() {
+	const songs = await getSongs();
+	const artists = [...new Map(songs.map((song) => [getArtistSlug(song), song.data.artist])).entries()];
+
+	return artists.map(([artistSlug, artistName]) => ({
+		params: { artist: artistSlug },
+		props: {
+			artistName,
+			songs: songs.filter((song) => getArtistSlug(song) === artistSlug),
+		},
+	}));
+}
+
+const { artistName, songs } = Astro.props;
+---
+
+<Layout title={`${artistName} · Lyrics Workbench`} description={`Songs by ${artistName}.`}>
+	<main class="shell artist-page">
+		<a class="pill" href="/">Back to library</a>
+		<section class="panel artist-hero">
+			<div>
+				<p class="eyebrow">Artist</p>
+				<h1>{artistName}</h1>
+				<p class="copy">Every song here comes from Markdown files in the repo. Add another file for this artist and it will appear on the next build.</p>
+			</div>
+			<a class="button button--accent" href={getArtistPath(artistName)}>Refresh grouping</a>
+		</section>
+
+		<ul class="artist-songs">
+			{songs.map((song) => (
+				<li class="panel song-row">
+					<div>
+						<h2>{song.data.title}</h2>
+						<p>Capo {song.data.capo} · {song.data.chords.join(' · ')}</p>
+					</div>
+					<div class="song-row__actions">
+						<a class="pill" href={getSongPath(song)}>Read</a>
+						<a class="pill button--accent" href={getPlayPath(song)}>Play</a>
+					</div>
+				</li>
+			))}
+		</ul>
+	</main>
+</Layout>
+
+<style>
+	.artist-page {
+		display: grid;
+		gap: 1rem;
+	}
+
+	.artist-hero,
+	.song-row {
+		padding: 1.25rem 1.5rem;
+	}
+
+	.artist-hero,
+	.song-row {
+		display: flex;
+		justify-content: space-between;
+		gap: 1rem;
+		align-items: center;
+	}
+
+	h1,
+	h2,
+	p {
+		margin: 0;
+	}
+
+	h1 {
+		font-size: clamp(2.2rem, 6vw, 4rem);
+	}
+
+	.copy,
+	.song-row p {
+		margin-top: 0.5rem;
+		color: var(--muted);
+	}
+
+	.artist-songs {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 0.9rem;
+	}
+
+	.song-row__actions {
+		display: flex;
+		gap: 0.6rem;
+		flex-wrap: wrap;
+	}
+
+	@media (max-width: 720px) {
+		.artist-hero,
+		.song-row {
+			padding: 1rem;
+			flex-direction: column;
+			align-items: start;
+		}
+	}
+</style>

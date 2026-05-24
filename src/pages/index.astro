@@ -1,11 +1,311 @@
 ---
-import Welcome from '../components/Welcome.astro';
 import Layout from '../layouts/Layout.astro';
+import { getArtistPath, getPlayPath, getSongPath, getSongs, groupSongsByArtist } from '../lib/songs';
 
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
+const songs = await getSongs();
+const artistGroups = groupSongsByArtist(songs);
 ---
 
-<Layout>
-	<Welcome />
+<Layout title="Lyrics Workbench" description="Browse songs by title or artist and open a minimal play view.">
+	<main class="shell">
+		<section class="hero panel">
+			<div>
+				<p class="eyebrow">Repo-driven practice library</p>
+				<h1>Lyrics, chords, and capo notes with a clean play view.</h1>
+				<p class="lead">
+					Add one Markdown file per song, commit, and push. The site rebuilds the song directory and artist list automatically.
+				</p>
+			</div>
+			<div class="hero__actions">
+				<label class="search panel" for="song-search">
+					<span class="eyebrow">Find a song</span>
+					<input id="song-search" type="search" placeholder="Search title or artist" autocomplete="off" data-song-search />
+				</label>
+				<div class="hero__meta">
+					<div class="metric">
+						<strong>{songs.length}</strong>
+						<span>Songs</span>
+					</div>
+					<div class="metric">
+						<strong>{artistGroups.length}</strong>
+						<span>Artists</span>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<section class="song-grid" aria-label="Song browser">
+			<div class="song-list panel">
+				<div class="section-heading">
+					<div>
+						<p class="eyebrow">Song name</p>
+						<h2>All songs</h2>
+					</div>
+					<p class="section-copy">Search filters this list instantly in the browser.</p>
+				</div>
+				<ul class="cards" data-song-list>
+					{
+						songs.map((song) => (
+							<li
+								class="song-card"
+								data-song-card
+								data-filter={`${song.data.title} ${song.data.artist}`.toLowerCase()}
+							>
+								<div>
+									<p class="song-card__artist">{song.data.artist}</p>
+									<h3>{song.data.title}</h3>
+									<p class="song-card__meta">
+										Capo {song.data.capo} · {song.data.chords.join(' · ')}
+									</p>
+								</div>
+								<div class="song-card__actions">
+									<a class="pill" href={getSongPath(song)}>Open</a>
+									<a class="pill button--accent" href={getPlayPath(song)}>Play</a>
+								</div>
+							</li>
+						))
+					}
+				</ul>
+			</div>
+
+			<div class="artist-list panel">
+				<div class="section-heading">
+					<div>
+						<p class="eyebrow">Browse by artist</p>
+						<h2>Artists</h2>
+					</div>
+					<p class="section-copy">Each artist page is built from the same Markdown files.</p>
+				</div>
+				<div class="artist-groups">
+					{
+						artistGroups.map((group) => (
+							<section class="artist-group" data-artist-group>
+								<div class="artist-group__header">
+									<a href={getArtistPath(group.artist)}>
+										<h3>{group.artist}</h3>
+									</a>
+									<span>{group.songs.length} song{group.songs.length === 1 ? '' : 's'}</span>
+								</div>
+								<ul>
+									{group.songs.map((song) => <li data-filter={song.data.title.toLowerCase()}>{song.data.title}</li>)}
+								</ul>
+							</section>
+						))
+					}
+				</div>
+			</div>
+		</section>
+
+		<section class="workflow panel">
+			<div>
+				<p class="eyebrow">Add songs</p>
+				<h2>Commit Markdown files, rebuild automatically.</h2>
+			</div>
+			<p>
+				Store songs under <code>src/content/songs</code> with frontmatter for artist, capo, chords, and notes. Lyrics live in the body, one line per line.
+			</p>
+		</section>
+	</main>
+
+	<script>
+		const searchInput = document.querySelector('[data-song-search]');
+		const cards = [...document.querySelectorAll('[data-song-card]')];
+		const artistGroups = [...document.querySelectorAll('[data-artist-group]')];
+
+		searchInput?.addEventListener('input', (event) => {
+			const query = event.currentTarget instanceof HTMLInputElement ? event.currentTarget.value.trim().toLowerCase() : '';
+
+			cards.forEach((card) => {
+				const matches = !query || card.dataset.filter?.includes(query);
+				card.toggleAttribute('hidden', !matches);
+			});
+
+			artistGroups.forEach((group) => {
+				const matches = !query || [...group.querySelectorAll('[data-filter]')].some((item) => item.dataset.filter?.includes(query));
+				group.toggleAttribute('hidden', !matches);
+			});
+		});
+	</script>
 </Layout>
+
+<style>
+	.hero {
+		display: grid;
+		grid-template-columns: 1.4fr 0.9fr;
+		gap: 1.5rem;
+		padding: 1.5rem;
+		margin-bottom: 1.5rem;
+	}
+
+	h1,
+	h2,
+	h3,
+	p {
+		margin: 0;
+	}
+
+	h1 {
+		font-size: clamp(2.2rem, 5vw, 4.6rem);
+		line-height: 0.95;
+		max-width: 12ch;
+	}
+
+	.lead {
+		margin-top: 1rem;
+		max-width: 50ch;
+		color: var(--muted);
+		font-size: 1.05rem;
+	}
+
+	.hero__actions {
+		display: grid;
+		gap: 1rem;
+	}
+
+	.search {
+		display: grid;
+		gap: 0.75rem;
+		padding: 1rem;
+	}
+
+	.search input {
+		width: 100%;
+		padding: 0.9rem 1rem;
+		border-radius: 16px;
+		border: 1px solid var(--line);
+		background: rgba(255, 255, 255, 0.78);
+	}
+
+	.hero__meta {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1rem;
+	}
+
+	.metric {
+		padding: 1rem;
+		border-radius: 20px;
+		background: var(--surface-strong);
+		border: 1px solid var(--line);
+	}
+
+	.metric strong {
+		display: block;
+		font-size: 2rem;
+	}
+
+	.metric span,
+	.section-copy,
+	.song-card__artist,
+	.song-card__meta,
+	.artist-group span,
+	.workflow p {
+		color: var(--muted);
+	}
+
+	.song-grid {
+		display: grid;
+		grid-template-columns: 1.1fr 0.9fr;
+		gap: 1.5rem;
+	}
+
+	.song-list,
+	.artist-list,
+	.workflow {
+		padding: 1.5rem;
+	}
+
+	.section-heading,
+	.artist-group__header,
+	.song-card,
+	.workflow {
+		display: flex;
+		align-items: start;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+
+	.cards,
+	.artist-groups,
+	.artist-group ul {
+		list-style: none;
+		padding: 0;
+		margin: 1.25rem 0 0;
+	}
+
+	.cards,
+	.artist-groups {
+		display: grid;
+		gap: 0.9rem;
+	}
+
+	.song-card,
+	.artist-group {
+		padding: 1rem;
+		border-radius: 20px;
+		background: var(--surface-strong);
+		border: 1px solid var(--line);
+	}
+
+	.song-card h3,
+	.artist-group h3,
+	.workflow h2 {
+		font-size: 1.15rem;
+	}
+
+	.song-card__actions {
+		display: flex;
+		gap: 0.6rem;
+		flex-wrap: wrap;
+	}
+
+	.artist-group ul {
+		display: grid;
+		gap: 0.35rem;
+		margin-top: 0.75rem;
+	}
+
+	.workflow {
+		margin-top: 1.5rem;
+		padding: 1.2rem 1.5rem;
+		align-items: center;
+	}
+
+	code {
+		padding: 0.15rem 0.4rem;
+		border-radius: 8px;
+		background: var(--accent-soft);
+	}
+
+	[hidden] {
+		display: none !important;
+	}
+
+	@media (max-width: 900px) {
+		.hero,
+		.song-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	@media (max-width: 720px) {
+		.hero,
+		.song-list,
+		.artist-list,
+		.workflow {
+			padding: 1rem;
+		}
+
+		.song-card,
+		.artist-group,
+		.workflow,
+		.section-heading,
+		.artist-group__header {
+			flex-direction: column;
+		}
+
+		h1 {
+			max-width: none;
+		}
+	}
+</style>

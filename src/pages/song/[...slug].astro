@@ -1,0 +1,173 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { getArtistPath, getArtistSlug, getPlayPath, getSongLines, getSongPath, getSongs } from '../../lib/songs';
+
+export async function getStaticPaths() {
+	const songs = await getSongs();
+
+	return songs.map((song) => ({
+		params: { slug: song.id },
+		props: { song },
+	}));
+}
+
+const { song } = Astro.props;
+const lines = getSongLines(song);
+---
+
+<Layout title={`${song.data.title} · Lyrics Workbench`} description={`${song.data.title} by ${song.data.artist}`}>
+	<main class="shell song-page">
+		<nav class="song-nav">
+			<a class="pill" href="/">Library</a>
+			<a class="pill" href={getArtistPath(song.data.artist)}>{song.data.artist}</a>
+			<a class="pill button--accent" href={getPlayPath(song)}>Play mode</a>
+		</nav>
+
+		<section class="panel song-hero">
+			<div>
+				<p class="eyebrow">Song sheet</p>
+				<h1>{song.data.title}</h1>
+				<p class="artist-line">{song.data.artist}</p>
+			</div>
+			<dl class="meta-grid">
+				<div>
+					<dt>Capo</dt>
+					<dd>{song.data.capo}</dd>
+				</div>
+				<div>
+					<dt>Tuning</dt>
+					<dd>{song.data.tuning}</dd>
+				</div>
+				<div>
+					<dt>Key</dt>
+					<dd>{song.data.key ?? 'Not set'}</dd>
+				</div>
+				<div>
+					<dt>Chords</dt>
+					<dd>{song.data.chords.join(' · ') || 'Not set'}</dd>
+				</div>
+			</dl>
+		</section>
+
+		<section class="song-body">
+			<aside class="panel notes-panel">
+				<h2>Notes</h2>
+				<p>{song.data.notes ?? 'Add notes in frontmatter when you want arrangement or capo reminders.'}</p>
+				<a class="pill" href={getSongPath(song)}>Permalink</a>
+			</aside>
+
+			<section class="panel lyrics-panel">
+				<h2>Lyrics</h2>
+				<ol class="lyrics-font lyric-lines">
+					{lines.map((line) => <li class:list={[{ spacer: line.trim().length === 0 }]}>{line || ' '}</li>)}
+				</ol>
+			</section>
+		</section>
+	</main>
+</Layout>
+
+<style>
+	.song-page {
+		display: grid;
+		gap: 1rem;
+	}
+
+	.song-nav,
+	.song-hero,
+	.song-body {
+		display: flex;
+		gap: 1rem;
+	}
+
+	.song-nav {
+		flex-wrap: wrap;
+	}
+
+	.song-hero,
+	.notes-panel,
+	.lyrics-panel {
+		padding: 1.5rem;
+	}
+
+	.song-hero {
+		justify-content: space-between;
+		align-items: end;
+	}
+
+	h1,
+	h2,
+	p,
+	dl,
+	dd {
+		margin: 0;
+	}
+
+	h1 {
+		font-size: clamp(2.2rem, 6vw, 4.5rem);
+		line-height: 0.95;
+	}
+
+	.artist-line,
+	.notes-panel p,
+	dt {
+		color: var(--muted);
+	}
+
+	.meta-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1rem 1.5rem;
+	}
+
+	dd {
+		margin-top: 0.25rem;
+		font-weight: 600;
+	}
+
+	.song-body {
+		align-items: start;
+	}
+
+	.notes-panel {
+		width: min(320px, 100%);
+		display: grid;
+		gap: 1rem;
+	}
+
+	.lyrics-panel {
+		flex: 1;
+	}
+
+	.lyric-lines {
+		padding-left: 1.25rem;
+		font-size: clamp(1.05rem, 2vw, 1.35rem);
+		line-height: 1.9;
+	}
+
+	.lyric-lines li.spacer {
+		min-height: 1.2rem;
+	}
+
+	@media (max-width: 900px) {
+		.song-hero,
+		.song-body {
+			flex-direction: column;
+		}
+
+		.notes-panel {
+			width: 100%;
+		}
+	}
+
+	@media (max-width: 720px) {
+		.song-hero,
+		.notes-panel,
+		.lyrics-panel {
+			padding: 1rem;
+		}
+
+		.meta-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>
