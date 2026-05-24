@@ -2,6 +2,14 @@ import { getCollection, type CollectionEntry } from 'astro:content';
 
 export type SongEntry = CollectionEntry<'songs'>;
 
+export function withBase(path: string) {
+	const base = import.meta.env.BASE_URL || '/';
+	const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+	const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
+
+	return `${normalizedBase}${normalizedPath}`;
+}
+
 export async function getSongs() {
 	const songs = await getCollection('songs');
 
@@ -28,7 +36,7 @@ export function getArtistSlug(song: SongEntry) {
 }
 
 export function getPlayPath(song: SongEntry) {
-	return `/play/${song.id}/`;
+	return withBase(`play/${song.id}/`);
 }
 
 export function getSongLines(song: SongEntry) {

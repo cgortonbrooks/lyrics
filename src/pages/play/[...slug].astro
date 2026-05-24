@@ -1,6 +1,6 @@
 ---
 import Layout from '../../layouts/Layout.astro';
-import { getSongLines, getSongs } from '../../lib/songs';
+import { getSongLines, getSongs, withBase } from '../../lib/songs';
 
 export async function getStaticPaths() {
 	const songs = await getSongs();
@@ -45,7 +45,7 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 
 		<footer class="play-controls panel" data-controls data-bpm={song.data.bpm} data-duration-seconds={durationSeconds}>
 			<div class="transport-row">
-				<a class="icon-button" href="/" aria-label="Library" title="Library">
+				<a class="icon-button" href={withBase('')} aria-label="Library" title="Library">
 					<svg viewBox="0 0 24 24" aria-hidden="true">
 						<path d="M3 10.5 12 3l9 7.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
 						<path d="M5.25 9.75V21h13.5V9.75" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
