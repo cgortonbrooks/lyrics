@@ -27,14 +27,6 @@ export function getArtistSlug(song: SongEntry) {
 	return slugify(song.data.artist);
 }
 
-export function getArtistPath(artist: string) {
-	return `/artist/${slugify(artist)}/`;
-}
-
-export function getSongPath(song: SongEntry) {
-	return `/song/${song.id}/`;
-}
-
 export function getPlayPath(song: SongEntry) {
 	return `/play/${song.id}/`;
 }

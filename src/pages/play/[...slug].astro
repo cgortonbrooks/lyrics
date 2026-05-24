@@ -1,6 +1,6 @@
 ---
 import Layout from '../../layouts/Layout.astro';
-import { getArtistPath, getSongLines, getSongs } from '../../lib/songs';
+import { getSongLines, getSongs } from '../../lib/songs';
 
 export async function getStaticPaths() {
 	const songs = await getSongs();
@@ -13,27 +13,24 @@ export async function getStaticPaths() {
 
 const { song } = Astro.props;
 const lines = getSongLines(song);
+
+function parseDurationToSeconds(duration: string) {
+	const [minutesText, secondsText] = duration.split(':');
+	const minutes = Number(minutesText);
+	const seconds = Number(secondsText);
+
+	if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) {
+		return 0;
+	}
+
+	return minutes * 60 + seconds;
+}
+
+const durationSeconds = parseDurationToSeconds(song.data.duration);
 ---
 
 <Layout title={`${song.data.title} · Play`} description={`Play view for ${song.data.title}`} bodyClass="play-body">
 	<main class="play-shell">
-		<header class="play-controls panel">
-			<div>
-				<p class="eyebrow">Play mode</p>
-				<h1>{song.data.title}</h1>
-				<p>{song.data.artist} · Capo {song.data.capo} · {song.data.chords.join(' · ')}</p>
-			</div>
-			<div class="control-row">
-				<label>
-					<span>Speed</span>
-					<input type="range" min="12" max="120" value="34" step="2" data-speed />
-				</label>
-				<button class="button button--accent" type="button" data-toggle-scroll>Start scroll</button>
-				<a class="pill" href={getArtistPath(song.data.artist)}>Artist</a>
-				<a class="pill" href={`/song/${song.id}/`}>Song</a>
-			</div>
-		</header>
-
 		<section class="play-surface" data-play-surface>
 			<ol class="play-lyrics lyrics-font" data-play-lyrics>
 				{
@@ -45,92 +42,287 @@ const lines = getSongLines(song);
 				}
 			</ol>
 		</section>
+
+		<footer class="play-controls panel" data-controls data-bpm={song.data.bpm} data-duration-seconds={durationSeconds}>
+			<div class="transport-row">
+				<a class="icon-button" href="/" aria-label="Library" title="Library">
+					<svg viewBox="0 0 24 24" aria-hidden="true">
+						<path d="M3 10.5 12 3l9 7.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
+						<path d="M5.25 9.75V21h13.5V9.75" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
+						<path d="M9.75 21v-6h4.5v6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
+					</svg>
+					<span class="visually-hidden">Library</span>
+				</a>
+				<button class="icon-button icon-button--accent" type="button" data-toggle-scroll aria-label="Start scroll" title="Start scroll">
+					<svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true">
+						<path d="M8 6.5v11l9-5.5-9-5.5Z" fill="currentColor"></path>
+					</svg>
+					<svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true">
+						<path d="M8 6.5h3.5v11H8zm4.5 0H16v11h-3.5z" fill="currentColor"></path>
+					</svg>
+					<span class="visually-hidden" data-toggle-label>Start scroll</span>
+				</button>
+				<button class="icon-button" type="button" data-toggle-metronome aria-pressed="false" aria-label="Start metronome" title="Start metronome">
+					<svg viewBox="0 0 24 24" aria-hidden="true">
+						<path d="M12 3 6.75 20.25h10.5L12 3Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"></path>
+						<path d="M12 7.5v5.25" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path>
+						<path d="m10 12 4-2.25" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path>
+						<path d="M9 20.25h6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path>
+					</svg>
+					<span class="visually-hidden" data-metronome-label>Start metronome</span>
+				</button>
+			</div>
+			<label class="speed-control">
+				<span>Scroll speed</span>
+				<input type="range" min="0.5" max="2" value="1" step="0.05" data-speed />
+			</label>
+		</footer>
 	</main>
 
 	<script>
 		const surface = document.querySelector('[data-play-surface]');
+		const controls = document.querySelector('[data-controls]');
 		const speedInput = document.querySelector('[data-speed]');
 		const toggleButton = document.querySelector('[data-toggle-scroll]');
+		const toggleLabel = document.querySelector('[data-toggle-label]');
+		const metronomeButton = document.querySelector('[data-toggle-metronome]');
+		const metronomeLabel = document.querySelector('[data-metronome-label]');
 		const lines = [...document.querySelectorAll('[data-line]')];
 
 		let isRunning = false;
-		let speed = speedInput instanceof HTMLInputElement ? Number(speedInput.value) : 34;
+		let metronomeRunning = false;
+		let speedMultiplier = speedInput instanceof HTMLInputElement ? Number(speedInput.value) : 1;
+		let bpm = controls instanceof HTMLElement ? Number(controls.dataset.bpm ?? '0') : 0;
+		let durationSeconds = controls instanceof HTMLElement ? Number(controls.dataset.durationSeconds ?? '0') : 0;
 		let lastTimestamp = 0;
-		let activeLine = null;
+		let initialScrollTop = 0;
+		let currentScrollTop = 0;
+		let hasInitializedPosition = false;
+		let manualHoldUntil = 0;
+		let suppressManualScrollHold = false;
+		let metronomeTimer = 0;
+		let metronomeIsLight = false;
 
-		const setActiveLine = () => {
+		const setInitialPosition = () => {
 			if (!(surface instanceof HTMLElement) || lines.length === 0) {
 				return;
 			}
 
-			const center = surface.scrollTop + surface.clientHeight * 0.38;
-			let nearest = lines[0];
-			let smallestDistance = Number.POSITIVE_INFINITY;
-
-			for (const line of lines) {
-				if (!(line instanceof HTMLElement)) {
-					continue;
-				}
-
-				const lineCenter = line.offsetTop + line.offsetHeight / 2;
-				const distance = Math.abs(center - lineCenter);
-				if (distance < smallestDistance) {
-					smallestDistance = distance;
-					nearest = line;
-				}
+			const firstLine = lines[0];
+			if (!(firstLine instanceof HTMLElement)) {
+				return;
 			}
 
-			if (activeLine !== nearest) {
-				activeLine?.classList.remove('is-active');
-				nearest.classList.add('is-active');
-				activeLine = nearest;
+			initialScrollTop = Math.max(0, firstLine.offsetTop - surface.clientHeight * 0.38);
+			if (!hasInitializedPosition) {
+				surface.scrollTop = initialScrollTop;
+				currentScrollTop = initialScrollTop;
+				hasInitializedPosition = true;
+				return;
 			}
+
+			currentScrollTop = Math.max(initialScrollTop, Math.min(surface.scrollHeight - surface.clientHeight, surface.scrollTop));
+			surface.scrollTop = currentScrollTop;
+		};
+
+		const getScrollPixelsPerSecond = () => {
+			if (!(surface instanceof HTMLElement) || !Number.isFinite(durationSeconds) || durationSeconds <= 0 || !Number.isFinite(speedMultiplier) || speedMultiplier <= 0) {
+				return 0;
+			}
+
+			const totalScrollDistance = Math.max(0, surface.scrollHeight - surface.clientHeight - initialScrollTop);
+			if (totalScrollDistance <= 0) {
+				return 0;
+			}
+
+			return (totalScrollDistance / durationSeconds) * speedMultiplier;
+		};
+
+		const stopScrollPlayback = () => {
+			isRunning = false;
+			lastTimestamp = 0;
+			if (surface instanceof HTMLElement) {
+				currentScrollTop = surface.scrollTop;
+			}
+			toggleButton?.classList.remove('is-active');
+			toggleButton?.setAttribute('aria-label', 'Start scroll');
+			toggleButton?.setAttribute('title', 'Start scroll');
+			if (toggleLabel instanceof HTMLElement) {
+				toggleLabel.textContent = 'Start scroll';
+			}
+		};
+
+		const startScrollPlayback = () => {
+			if (isRunning) {
+				return;
+			}
+
+			isRunning = true;
+			lastTimestamp = 0;
+			toggleButton?.classList.add('is-active');
+			toggleButton?.setAttribute('aria-label', 'Pause scroll');
+			toggleButton?.setAttribute('title', 'Pause scroll');
+			if (toggleLabel instanceof HTMLElement) {
+				toggleLabel.textContent = 'Pause scroll';
+			}
+			requestAnimationFrame(tick);
 		};
 
 		const tick = (timestamp) => {
 			if (!(surface instanceof HTMLElement) || !isRunning) {
-				lastTimestamp = timestamp;
+				lastTimestamp = 0;
 				return;
 			}
 
 			if (lastTimestamp === 0) {
 				lastTimestamp = timestamp;
+				currentScrollTop = surface.scrollTop;
+			}
+
+			if (timestamp < manualHoldUntil) {
+				currentScrollTop = surface.scrollTop;
+				lastTimestamp = timestamp;
+				requestAnimationFrame(tick);
+				return;
 			}
 
 			const elapsed = timestamp - lastTimestamp;
 			lastTimestamp = timestamp;
-			surface.scrollTop += (speed * elapsed) / 1000;
-			setActiveLine();
+			const nextScrollTop = currentScrollTop + (getScrollPixelsPerSecond() * elapsed) / 1000;
+			const maxScrollTop = Math.max(initialScrollTop, surface.scrollHeight - surface.clientHeight);
+
+			currentScrollTop = Math.min(maxScrollTop, nextScrollTop);
+			suppressManualScrollHold = true;
+			surface.scrollTop = currentScrollTop;
+			if (surface.scrollTop >= maxScrollTop) {
+				stopScrollPlayback();
+				return;
+			}
+
 			requestAnimationFrame(tick);
+		};
+
+		const clearMetronomePulse = () => {
+			metronomeIsLight = false;
+			controls?.classList.remove('is-metronome-active');
+			controls?.classList.remove('is-beating');
+		};
+
+		const pulseMetronome = () => {
+			if (!(controls instanceof HTMLElement)) {
+				return;
+			}
+
+			controls.classList.add('is-metronome-active');
+			metronomeIsLight = !metronomeIsLight;
+			controls.classList.toggle('is-beating', metronomeIsLight);
+		};
+
+		const stopMetronome = () => {
+			metronomeRunning = false;
+			if (metronomeTimer) {
+				window.clearInterval(metronomeTimer);
+				metronomeTimer = 0;
+			}
+			clearMetronomePulse();
+			metronomeButton?.setAttribute('aria-pressed', 'false');
+			metronomeButton?.classList.remove('is-active');
+			metronomeButton?.setAttribute('aria-label', 'Start metronome');
+			metronomeButton?.setAttribute('title', 'Start metronome');
+			if (metronomeLabel instanceof HTMLElement) {
+				metronomeLabel.textContent = 'Start metronome';
+			}
+		};
+
+		const startMetronome = () => {
+			if (!Number.isFinite(bpm) || bpm <= 0) {
+				return;
+			}
+
+			stopMetronome();
+			metronomeRunning = true;
+			metronomeButton?.setAttribute('aria-pressed', 'true');
+			metronomeButton?.classList.add('is-active');
+			metronomeButton?.setAttribute('aria-label', 'Stop metronome');
+			metronomeButton?.setAttribute('title', 'Stop metronome');
+			if (metronomeLabel instanceof HTMLElement) {
+				metronomeLabel.textContent = 'Stop metronome';
+			}
+
+			metronomeIsLight = false;
+			pulseMetronome();
+			metronomeTimer = window.setInterval(pulseMetronome, 60000 / bpm);
 		};
 
 		speedInput?.addEventListener('input', (event) => {
 			if (event.currentTarget instanceof HTMLInputElement) {
-				speed = Number(event.currentTarget.value);
+				speedMultiplier = Number(event.currentTarget.value);
 			}
 		});
 
 		toggleButton?.addEventListener('click', () => {
-			isRunning = !isRunning;
-			toggleButton.textContent = isRunning ? 'Pause scroll' : 'Start scroll';
-			lastTimestamp = 0;
 			if (isRunning) {
-				requestAnimationFrame(tick);
+				stopScrollPlayback();
+				return;
+			}
+
+			startScrollPlayback();
+		});
+
+		metronomeButton?.addEventListener('click', () => {
+			if (metronomeRunning) {
+				stopMetronome();
+			} else {
+				startMetronome();
 			}
 		});
 
-		surface?.addEventListener('scroll', setActiveLine, { passive: true });
 		lines.forEach((line) => {
 			line.addEventListener('click', () => {
 				if (!(surface instanceof HTMLElement) || !(line instanceof HTMLElement)) {
 					return;
 				}
 
-				surface.scrollTo({ top: Math.max(0, line.offsetTop - surface.clientHeight * 0.32), behavior: 'smooth' });
+				currentScrollTop = Math.max(0, line.offsetTop - surface.clientHeight * 0.32);
+				manualHoldUntil = performance.now() + 450;
+				suppressManualScrollHold = true;
+				surface.scrollTo({ top: currentScrollTop, behavior: 'smooth' });
 			});
 		});
 
-		setActiveLine();
+		surface?.addEventListener('scroll', () => {
+			if (!(surface instanceof HTMLElement)) {
+				return;
+			}
+
+			currentScrollTop = surface.scrollTop;
+			if (suppressManualScrollHold) {
+				suppressManualScrollHold = false;
+				return;
+			}
+			manualHoldUntil = performance.now() + 350;
+		});
+
+		surface?.addEventListener('pointerdown', (event) => {
+			if (!(event instanceof PointerEvent)) {
+				return;
+			}
+
+			manualHoldUntil = performance.now() + 600;
+		}, { passive: true });
+
+		surface?.addEventListener('touchmove', () => {
+			manualHoldUntil = performance.now() + 600;
+		}, { passive: true });
+
+		surface?.addEventListener('wheel', () => {
+			manualHoldUntil = performance.now() + 450;
+		}, { passive: true });
+
+		setInitialPosition();
+		window.addEventListener('resize', () => {
+			setInitialPosition();
+		});
 	</script>
 </Layout>
 
@@ -144,52 +336,100 @@ const lines = getSongLines(song);
 		height: 100dvh;
 		padding: 0.75rem;
 		display: grid;
-		grid-template-rows: auto minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1fr) auto;
 		gap: 0.75rem;
 	}
 
-	.play-controls {
-		padding: 1rem;
-		display: flex;
-		justify-content: space-between;
-		gap: 1rem;
-		align-items: center;
-	}
-
-	h1,
 	p,
 	ol {
 		margin: 0;
 	}
 
-	h1 {
-		font-size: clamp(1.8rem, 5vw, 3rem);
-	}
-
-	.play-controls p:last-child,
-	.control-row span {
+	.speed-control span {
 		color: var(--muted);
 	}
 
-	.control-row {
-		display: flex;
-		align-items: center;
-		gap: 0.8rem;
-		flex-wrap: wrap;
-		justify-content: end;
+	.play-controls {
+		padding: 0.9rem 1rem;
+		display: grid;
+		gap: 0.9rem;
+		position: sticky;
+		bottom: 0;
+		transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 	}
 
-	.control-row label {
+	.play-controls.is-metronome-active {
+		background: rgba(27, 19, 15, 0.045);
+		border-color: rgba(27, 19, 15, 0.12);
+		box-shadow: 0 24px 60px rgba(44, 26, 17, 0.12), inset 0 0 0 1px rgba(27, 19, 15, 0.03);
+	}
+
+	.play-controls.is-beating {
+		background: rgba(182, 90, 42, 0.08);
+		border-color: rgba(182, 90, 42, 0.16);
+		box-shadow: 0 24px 60px rgba(44, 26, 17, 0.14), inset 0 0 0 1px rgba(182, 90, 42, 0.06);
+	}
+
+	.transport-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		width: 100%;
+	}
+
+	.speed-control {
 		display: grid;
 		gap: 0.35rem;
-		min-width: 180px;
+		width: 100%;
+	}
+
+	.speed-control input {
+		width: 100%;
+	}
+
+	.icon-button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 3.2rem;
+		height: 3.2rem;
+		border-radius: 999px;
+		border: 1px solid var(--line);
+		background: var(--surface-strong);
+		color: var(--ink);
+		box-shadow: 0 10px 24px rgba(44, 26, 17, 0.08);
+	}
+
+	.icon-button svg {
+		width: 1.3rem;
+		height: 1.3rem;
+	}
+
+	.icon-button--accent,
+	.icon-button.is-active {
+		background: var(--accent);
+		border-color: transparent;
+		color: #fff7f1;
+	}
+
+	.icon-pause {
+		display: none;
+	}
+
+	.icon-button.is-active .icon-play {
+		display: none;
+	}
+
+	.icon-button.is-active .icon-pause {
+		display: block;
 	}
 
 	.play-surface {
 		min-height: 0;
 		overflow-y: auto;
 		scroll-behavior: smooth;
-		padding: 16vh 0 38vh;
+		padding: 26vh 0 24vh;
 	}
 
 	.play-lyrics {
@@ -206,15 +446,8 @@ const lines = getSongLines(song);
 	.play-line {
 		padding: 0.35rem 0.25rem;
 		color: rgba(27, 19, 15, 0.42);
-		transition: color 140ms ease, transform 140ms ease, background-color 140ms ease;
+		transition: color 140ms ease;
 		border-radius: 14px;
-	}
-
-	.play-line.is-active {
-		color: var(--ink);
-		background: rgba(255, 250, 242, 0.92);
-		transform: scale(1.02);
-		box-shadow: 0 14px 30px rgba(51, 31, 19, 0.12);
 	}
 
 	.play-line.spacer {
@@ -230,12 +463,15 @@ const lines = getSongLines(song);
 
 		.play-controls {
 			padding: 0.85rem;
-			flex-direction: column;
-			align-items: start;
 		}
 
-		.control-row {
-			justify-content: start;
+		.transport-row,
+		.speed-control {
+			width: 100%;
+		}
+
+		.speed-control input {
+			width: 100%;
 		}
 
 		.play-lyrics {

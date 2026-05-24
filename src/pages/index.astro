@@ -1,6 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { getArtistPath, getPlayPath, getSongPath, getSongs, groupSongsByArtist } from '../lib/songs';
+import { getPlayPath, getSongs, groupSongsByArtist } from '../lib/songs';
 
 const songs = await getSongs();
 const artistGroups = groupSongsByArtist(songs);
@@ -55,11 +55,10 @@ const artistGroups = groupSongsByArtist(songs);
 									<p class="song-card__artist">{song.data.artist}</p>
 									<h3>{song.data.title}</h3>
 									<p class="song-card__meta">
-										Capo {song.data.capo} · {song.data.chords.join(' · ')}
+										{song.data.bpm} BPM · Capo {song.data.capo} · {song.data.chords.join(' · ')}
 									</p>
 								</div>
 								<div class="song-card__actions">
-									<a class="pill" href={getSongPath(song)}>Open</a>
 									<a class="pill button--accent" href={getPlayPath(song)}>Play</a>
 								</div>
 							</li>
@@ -74,20 +73,22 @@ const artistGroups = groupSongsByArtist(songs);
 						<p class="eyebrow">Browse by artist</p>
 						<h2>Artists</h2>
 					</div>
-					<p class="section-copy">Each artist page is built from the same Markdown files.</p>
+					<p class="section-copy">Jump straight into play mode from each artist grouping.</p>
 				</div>
 				<div class="artist-groups">
 					{
 						artistGroups.map((group) => (
 							<section class="artist-group" data-artist-group>
 								<div class="artist-group__header">
-									<a href={getArtistPath(group.artist)}>
-										<h3>{group.artist}</h3>
-									</a>
+									<h3>{group.artist}</h3>
 									<span>{group.songs.length} song{group.songs.length === 1 ? '' : 's'}</span>
 								</div>
 								<ul>
-									{group.songs.map((song) => <li data-filter={song.data.title.toLowerCase()}>{song.data.title}</li>)}
+									{group.songs.map((song) => (
+										<li data-filter={song.data.title.toLowerCase()}>
+											<a href={getPlayPath(song)}>{song.data.title}</a>
+										</li>
+									))}
 								</ul>
 							</section>
 						))
@@ -102,7 +103,7 @@ const artistGroups = groupSongsByArtist(songs);
 				<h2>Commit Markdown files, rebuild automatically.</h2>
 			</div>
 			<p>
-				Store songs under <code>src/content/songs</code> with frontmatter for artist, capo, chords, and notes. Lyrics live in the body, one line per line.
+				Store songs under <code>src/content/songs</code> with frontmatter for artist, BPM, capo, chords, and notes. Lyrics live in the body, one line per line.
 			</p>
 		</section>
 	</main>
@@ -263,6 +264,12 @@ const artistGroups = groupSongsByArtist(songs);
 		display: grid;
 		gap: 0.35rem;
 		margin-top: 0.75rem;
+	}
+
+	.artist-group li a {
+		text-decoration: underline;
+		text-decoration-color: rgba(182, 90, 42, 0.3);
+		text-underline-offset: 0.18rem;
 	}
 
 	.workflow {

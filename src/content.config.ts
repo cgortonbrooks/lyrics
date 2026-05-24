@@ -9,6 +9,8 @@ const songs = defineCollection({
 	schema: z.object({
 		title: z.string(),
 		artist: z.string(),
+		duration: z.string().regex(/^\d+:\d{2}$/),
+		bpm: z.number().int().positive(),
 		capo: z.union([z.number().int().nonnegative(), z.string()]).default('None'),
 		chords: z.array(z.string()).default([]),
 		notes: z.string().optional(),

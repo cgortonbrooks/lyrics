@@ -38,6 +38,8 @@ Use this structure for each song:
 ---
 title: Your Song Title
 artist: Artist Name
+duration: 3:24
+bpm: 92
 capo: 2
 chords:
 	- G
@@ -63,6 +65,8 @@ Notes:
 - Put lyrics in the Markdown body, one lyric line per line.
 - Leave a blank line between sections to create visual spacing in song and play views.
 - `capo` can be a number or a string like `None`.
+- `duration` is required in `m:ss` format and is used as the baseline scroll timing.
+- `bpm` is required and should be a positive whole number.
 - `notes`, `key`, and `tags` are optional.
 
 ## Routes
@@ -79,8 +83,8 @@ The build generates these pages from your content files:
 The play page is designed for tablet or phone use:
 
 - Large lyric text
-- Active line highlighting based on scroll position
-- Adjustable auto-scroll speed
+- Continuous auto-scroll based on total song duration
+- Adjustable speed multiplier around the song-duration baseline
 - Tap any lyric line to jump that line closer to center
 
 ## Publishing
