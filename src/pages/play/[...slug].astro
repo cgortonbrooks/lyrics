@@ -71,6 +71,15 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 					</svg>
 					<span class="visually-hidden" data-metronome-label>Start metronome</span>
 				</button>
+				<button class="icon-button" type="button" data-toggle-metronome-sound aria-pressed="false" aria-label="Enable tic toc" title="Enable tic toc">
+					<svg viewBox="0 0 24 24" aria-hidden="true">
+						<path d="M5.5 14.5a3 3 0 0 0 0-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path>
+						<path d="M8.75 17.25a6.5 6.5 0 0 0 0-10.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path>
+						<path d="M12 19.5a9 9 0 0 0 0-15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path>
+						<path d="M4 10.5h2.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path>
+					</svg>
+					<span class="visually-hidden" data-metronome-sound-label>Enable tic toc</span>
+				</button>
 			</div>
 			<label class="speed-control">
 				<span>Scroll speed</span>
@@ -81,13 +90,17 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 
 	<script>
 		const surface = document.querySelector('[data-play-surface]');
+		const lyrics = document.querySelector('[data-play-lyrics]');
 		const controls = document.querySelector('[data-controls]');
 		const speedInput = document.querySelector('[data-speed]');
 		const toggleButton = document.querySelector('[data-toggle-scroll]');
 		const toggleLabel = document.querySelector('[data-toggle-label]');
 		const metronomeButton = document.querySelector('[data-toggle-metronome]');
 		const metronomeLabel = document.querySelector('[data-metronome-label]');
+		const metronomeSoundButton = document.querySelector('[data-toggle-metronome-sound]');
+		const metronomeSoundLabel = document.querySelector('[data-metronome-sound-label]');
 		const lines = [...document.querySelectorAll('[data-line]')];
+		const lineElements = lines.filter((line) => line instanceof HTMLElement);
 
 		const getSpeedMultiplierFromSlider = (value) => {
 			if (!Number.isFinite(value)) {
@@ -106,56 +119,217 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 		let speedMultiplier = speedInput instanceof HTMLInputElement ? getSpeedMultiplierFromSlider(Number(speedInput.value)) : 1;
 		let bpm = controls instanceof HTMLElement ? Number(controls.dataset.bpm ?? '0') : 0;
 		let durationSeconds = controls instanceof HTMLElement ? Number(controls.dataset.durationSeconds ?? '0') : 0;
-		let lastTimestamp = 0;
-		let initialScrollTop = 0;
-		let currentScrollTop = 0;
 		let hasInitializedPosition = false;
-		let manualHoldUntil = 0;
-		let suppressManualScrollHold = false;
 		let metronomeTimer = 0;
 		let metronomeIsLight = false;
+		let metronomeBeatIndex = 0;
+		let metronomeSoundEnabled = false;
+		let metronomeAudioContext = null;
+		let metronomeNoiseBuffer = null;
+		let wakeLockSentinel = null;
+		let playbackAnimation = null;
+		let currentOffset = 0;
+		let startOffset = 0;
+		let endOffset = 0;
+		let lineOffsets = [];
+		let dragPointerId = null;
+		let dragStartY = 0;
+		let dragStartOffset = 0;
+		let resumeAfterDrag = false;
+
+		const getDurationMs = () => Math.max(1000, durationSeconds * 1000);
+		const canUseWakeLock = typeof navigator !== 'undefined' && 'wakeLock' in navigator;
+
+		const releaseScreenWakeLock = async () => {
+			if (!wakeLockSentinel) {
+				return;
+			}
+
+			const activeSentinel = wakeLockSentinel;
+			wakeLockSentinel = null;
+
+			try {
+				await activeSentinel.release();
+			} catch {
+				// Ignore release failures; the sentinel is no longer usable either way.
+			}
+		};
+
+		const requestScreenWakeLock = async () => {
+			if (!canUseWakeLock || wakeLockSentinel || document.visibilityState !== 'visible') {
+				return;
+			}
+
+			try {
+				wakeLockSentinel = await navigator.wakeLock.request('screen');
+				wakeLockSentinel.addEventListener('release', () => {
+					wakeLockSentinel = null;
+				});
+			} catch {
+				wakeLockSentinel = null;
+			}
+		};
+
+		const syncScreenWakeLock = () => {
+			if (document.visibilityState === 'visible') {
+				void requestScreenWakeLock();
+				return;
+			}
+
+			void releaseScreenWakeLock();
+		};
+
+		const clampOffset = (value) => {
+			if (!Number.isFinite(value)) {
+				return 0;
+			}
+
+			if (startOffset >= endOffset) {
+				return Math.max(endOffset, Math.min(startOffset, value));
+			}
+
+			return Math.max(startOffset, Math.min(endOffset, value));
+		};
+
+		const applyOffset = (offset) => {
+			if (!(lyrics instanceof HTMLElement)) {
+				return;
+			}
+
+			currentOffset = clampOffset(offset);
+			lyrics.style.transform = `translate3d(0, ${currentOffset.toFixed(2)}px, 0)`;
+		};
+
+		const getOffsetForLine = (line, index) => {
+			if (!(surface instanceof HTMLElement)) {
+				return 0;
+			}
+
+			const anchorRatio = index === 0 ? 0.38 : 0.32;
+			return surface.clientHeight * anchorRatio - line.offsetTop;
+		};
+
+		const getProgressFromOffset = (offset = currentOffset) => {
+			const totalDistance = startOffset - endOffset;
+			if (Math.abs(totalDistance) < 0.5) {
+				return 0;
+			}
+
+			return Math.max(0, Math.min(1, (startOffset - offset) / totalDistance));
+		};
+
+		const getOffsetFromProgress = (progress) => {
+			const clampedProgress = Math.max(0, Math.min(1, progress));
+			return startOffset + (endOffset - startOffset) * clampedProgress;
+		};
+
+		const getNearestLineIndex = () => {
+			if (lineOffsets.length === 0) {
+				return 0;
+			}
+
+			let closestIndex = 0;
+			let closestDistance = Number.POSITIVE_INFINITY;
+
+			lineOffsets.forEach((offset, index) => {
+				const distance = Math.abs(offset - currentOffset);
+				if (distance < closestDistance) {
+					closestDistance = distance;
+					closestIndex = index;
+				}
+			});
+
+			return closestIndex;
+		};
+
+		const buildPlaybackMetrics = () => {
+			if (!(surface instanceof HTMLElement) || lineElements.length === 0) {
+				lineOffsets = [];
+				startOffset = 0;
+				endOffset = 0;
+				return;
+			}
+
+			lineOffsets = lineElements.map((line, index) => getOffsetForLine(line, index));
+			startOffset = lineOffsets[0] ?? 0;
+			endOffset = lineOffsets[lineOffsets.length - 1] ?? startOffset;
+
+			if (startOffset < endOffset) {
+				const swap = startOffset;
+				startOffset = endOffset;
+				endOffset = swap;
+				lineOffsets = lineOffsets.map((offset) => Math.max(endOffset, Math.min(startOffset, offset)));
+			}
+		};
+
+		const stopPlaybackEngine = () => {
+			if (playbackAnimation) {
+				const currentTime = Number(playbackAnimation.currentTime ?? 0);
+				const progress = Math.max(0, Math.min(1, currentTime / getDurationMs()));
+				playbackAnimation.cancel();
+				playbackAnimation = null;
+				applyOffset(getOffsetFromProgress(progress));
+			}
+		};
+
+		const startPlaybackEngine = () => {
+			if (!(lyrics instanceof HTMLElement)) {
+				return;
+			}
+
+			stopPlaybackEngine();
+
+			const durationMs = getDurationMs();
+			const initialProgress = getProgressFromOffset();
+			if (initialProgress >= 1) {
+				applyOffset(startOffset);
+			}
+
+			playbackAnimation = lyrics.animate(
+				[
+					{ transform: `translate3d(0, ${startOffset}px, 0)` },
+					{ transform: `translate3d(0, ${endOffset}px, 0)` },
+				],
+				{
+					duration: durationMs,
+					fill: 'both',
+					easing: 'linear',
+				},
+			);
+
+			playbackAnimation.pause();
+			playbackAnimation.currentTime = getProgressFromOffset() * durationMs;
+			playbackAnimation.playbackRate = speedMultiplier;
+			playbackAnimation.onfinish = () => {
+				applyOffset(endOffset);
+				stopScrollPlayback();
+			};
+			playbackAnimation.play();
+		};
 
 		const setInitialPosition = () => {
-			if (!(surface instanceof HTMLElement) || lines.length === 0) {
+			if (!(surface instanceof HTMLElement) || lineElements.length === 0) {
 				return;
 			}
 
-			const firstLine = lines[0];
-			if (!(firstLine instanceof HTMLElement)) {
+			buildPlaybackMetrics();
+			if (lineOffsets.length === 0) {
 				return;
 			}
 
-			initialScrollTop = Math.max(0, firstLine.offsetTop - surface.clientHeight * 0.38);
 			if (!hasInitializedPosition) {
-				surface.scrollTop = initialScrollTop;
-				currentScrollTop = initialScrollTop;
+				applyOffset(startOffset);
 				hasInitializedPosition = true;
 				return;
 			}
 
-			currentScrollTop = Math.max(initialScrollTop, Math.min(surface.scrollHeight - surface.clientHeight, surface.scrollTop));
-			surface.scrollTop = currentScrollTop;
-		};
-
-		const getScrollPixelsPerSecond = () => {
-			if (!(surface instanceof HTMLElement) || !Number.isFinite(durationSeconds) || durationSeconds <= 0 || !Number.isFinite(speedMultiplier) || speedMultiplier <= 0) {
-				return 0;
-			}
-
-			const totalScrollDistance = Math.max(0, surface.scrollHeight - surface.clientHeight - initialScrollTop);
-			if (totalScrollDistance <= 0) {
-				return 0;
-			}
-
-			return (totalScrollDistance / durationSeconds) * speedMultiplier;
+			const targetIndex = getNearestLineIndex();
+			applyOffset(lineOffsets[targetIndex] ?? startOffset);
 		};
 
 		const stopScrollPlayback = () => {
 			isRunning = false;
-			lastTimestamp = 0;
-			if (surface instanceof HTMLElement) {
-				currentScrollTop = surface.scrollTop;
-			}
+			stopPlaybackEngine();
 			toggleButton?.classList.remove('is-active');
 			toggleButton?.setAttribute('aria-label', 'Start scroll');
 			toggleButton?.setAttribute('title', 'Start scroll');
@@ -165,59 +339,181 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 		};
 
 		const startScrollPlayback = () => {
-			if (isRunning) {
+			if (!(surface instanceof HTMLElement) || !(lyrics instanceof HTMLElement) || isRunning) {
 				return;
 			}
 
+			buildPlaybackMetrics();
+			if (lineOffsets.length === 0) {
+				return;
+			}
+
+			if (getProgressFromOffset() >= 1) {
+				applyOffset(startOffset);
+			}
+
 			isRunning = true;
-			lastTimestamp = 0;
 			toggleButton?.classList.add('is-active');
 			toggleButton?.setAttribute('aria-label', 'Pause scroll');
 			toggleButton?.setAttribute('title', 'Pause scroll');
 			if (toggleLabel instanceof HTMLElement) {
 				toggleLabel.textContent = 'Pause scroll';
 			}
-			requestAnimationFrame(tick);
+
+			startPlaybackEngine();
 		};
 
-		const tick = (timestamp) => {
-			if (!(surface instanceof HTMLElement) || !isRunning) {
-				lastTimestamp = 0;
+		const beginDrag = (clientY, pointerId = null) => {
+			if (!(surface instanceof HTMLElement)) {
 				return;
 			}
 
-			if (lastTimestamp === 0) {
-				lastTimestamp = timestamp;
-				currentScrollTop = surface.scrollTop;
-			}
+			resumeAfterDrag = isRunning;
+			stopScrollPlayback();
+			dragPointerId = pointerId;
+			dragStartY = clientY;
+			dragStartOffset = currentOffset;
+			surface.classList.add('is-dragging');
+		};
 
-			if (timestamp < manualHoldUntil) {
-				currentScrollTop = surface.scrollTop;
-				lastTimestamp = timestamp;
-				requestAnimationFrame(tick);
+		const updateDrag = (clientY) => {
+			if (dragPointerId === null && clientY === 0) {
 				return;
 			}
 
-			const elapsed = timestamp - lastTimestamp;
-			lastTimestamp = timestamp;
-			const nextScrollTop = currentScrollTop + (getScrollPixelsPerSecond() * elapsed) / 1000;
-			const maxScrollTop = Math.max(initialScrollTop, surface.scrollHeight - surface.clientHeight);
+			applyOffset(dragStartOffset + (clientY - dragStartY));
+		};
 
-			currentScrollTop = Math.min(maxScrollTop, nextScrollTop);
-			suppressManualScrollHold = true;
-			surface.scrollTop = currentScrollTop;
-			if (surface.scrollTop >= maxScrollTop) {
-				stopScrollPlayback();
+		const endDrag = (pointerId = null) => {
+			if (pointerId !== null && dragPointerId !== pointerId) {
 				return;
 			}
 
-			requestAnimationFrame(tick);
+			const shouldResumePlayback = resumeAfterDrag;
+			resumeAfterDrag = false;
+			dragPointerId = null;
+			if (surface instanceof HTMLElement) {
+				surface.classList.remove('is-dragging');
+			}
+
+			if (shouldResumePlayback) {
+				startScrollPlayback();
+			}
 		};
 
 		const clearMetronomePulse = () => {
 			metronomeIsLight = false;
 			controls?.classList.remove('is-metronome-active');
 			controls?.classList.remove('is-beating');
+		};
+
+		const updateMetronomeSoundButton = () => {
+			metronomeSoundButton?.classList.toggle('is-active', metronomeSoundEnabled);
+			metronomeSoundButton?.setAttribute('aria-pressed', String(metronomeSoundEnabled));
+			metronomeSoundButton?.setAttribute('aria-label', metronomeSoundEnabled ? 'Disable tic toc' : 'Enable tic toc');
+			metronomeSoundButton?.setAttribute('title', metronomeSoundEnabled ? 'Disable tic toc' : 'Enable tic toc');
+
+			if (metronomeSoundLabel instanceof HTMLElement) {
+				metronomeSoundLabel.textContent = metronomeSoundEnabled ? 'Disable tic toc' : 'Enable tic toc';
+			}
+		};
+
+		const getMetronomeAudioContext = () => {
+			const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+			if (!AudioContextCtor) {
+				return null;
+			}
+
+			if (!metronomeAudioContext) {
+				metronomeAudioContext = new AudioContextCtor();
+			}
+
+			return metronomeAudioContext;
+		};
+
+		const getMetronomeNoiseBuffer = (audioContext) => {
+			if (metronomeNoiseBuffer && metronomeNoiseBuffer.sampleRate === audioContext.sampleRate) {
+				return metronomeNoiseBuffer;
+			}
+
+			const frameCount = Math.max(1, Math.floor(audioContext.sampleRate * 0.03));
+			const buffer = audioContext.createBuffer(1, frameCount, audioContext.sampleRate);
+			const channelData = buffer.getChannelData(0);
+
+			for (let index = 0; index < frameCount; index += 1) {
+				channelData[index] = Math.random() * 2 - 1;
+			}
+
+			metronomeNoiseBuffer = buffer;
+			return metronomeNoiseBuffer;
+		};
+
+		const resumeMetronomeAudioContext = async () => {
+			const audioContext = getMetronomeAudioContext();
+			if (!audioContext) {
+				return false;
+			}
+
+			if (audioContext.state === 'suspended') {
+				await audioContext.resume();
+			}
+
+			return audioContext.state === 'running';
+		};
+
+		const playMetronomeSound = () => {
+			if (!metronomeSoundEnabled) {
+				metronomeBeatIndex += 1;
+				return;
+			}
+
+			const audioContext = getMetronomeAudioContext();
+			if (!audioContext || audioContext.state !== 'running') {
+				metronomeBeatIndex += 1;
+				return;
+			}
+
+			const isTic = metronomeBeatIndex % 2 === 0;
+			const oscillator = audioContext.createOscillator();
+			const gainNode = audioContext.createGain();
+			const filterNode = audioContext.createBiquadFilter();
+			const noiseSource = audioContext.createBufferSource();
+			const noiseFilterNode = audioContext.createBiquadFilter();
+			const noiseGainNode = audioContext.createGain();
+			const startTime = audioContext.currentTime;
+			const attack = 0.0015;
+			const release = isTic ? 0.095 : 0.13;
+			const noiseRelease = isTic ? 0.026 : 0.032;
+
+			oscillator.type = isTic ? 'triangle' : 'sine';
+			oscillator.frequency.setValueAtTime(isTic ? 780 : 620, startTime);
+			filterNode.type = 'lowpass';
+			filterNode.frequency.setValueAtTime(isTic ? 1100 : 900, startTime);
+			filterNode.Q.value = 0.4;
+			gainNode.gain.setValueAtTime(0.0001, startTime);
+			gainNode.gain.linearRampToValueAtTime(isTic ? 0.07 : 0.055, startTime + attack);
+			gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + release);
+
+			noiseSource.buffer = getMetronomeNoiseBuffer(audioContext);
+			noiseFilterNode.type = 'bandpass';
+			noiseFilterNode.frequency.setValueAtTime(isTic ? 2100 : 1700, startTime);
+			noiseFilterNode.Q.value = isTic ? 1.2 : 0.9;
+			noiseGainNode.gain.setValueAtTime(0.0001, startTime);
+			noiseGainNode.gain.linearRampToValueAtTime(isTic ? 0.02 : 0.016, startTime + 0.0008);
+			noiseGainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + noiseRelease);
+
+			oscillator.connect(filterNode);
+			filterNode.connect(gainNode);
+			gainNode.connect(audioContext.destination);
+			noiseSource.connect(noiseFilterNode);
+			noiseFilterNode.connect(noiseGainNode);
+			noiseGainNode.connect(audioContext.destination);
+			oscillator.start(startTime);
+			oscillator.stop(startTime + release + 0.02);
+			noiseSource.start(startTime);
+			noiseSource.stop(startTime + noiseRelease + 0.01);
+
+			metronomeBeatIndex += 1;
 		};
 
 		const pulseMetronome = () => {
@@ -228,6 +524,7 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 			controls.classList.add('is-metronome-active');
 			metronomeIsLight = !metronomeIsLight;
 			controls.classList.toggle('is-beating', metronomeIsLight);
+			playMetronomeSound();
 		};
 
 		const stopMetronome = () => {
@@ -244,11 +541,16 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 			if (metronomeLabel instanceof HTMLElement) {
 				metronomeLabel.textContent = 'Start metronome';
 			}
+			metronomeBeatIndex = 0;
 		};
 
-		const startMetronome = () => {
+		const startMetronome = async () => {
 			if (!Number.isFinite(bpm) || bpm <= 0) {
 				return;
+			}
+
+			if (metronomeSoundEnabled) {
+				await resumeMetronomeAudioContext();
 			}
 
 			stopMetronome();
@@ -262,6 +564,7 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 			}
 
 			metronomeIsLight = false;
+			metronomeBeatIndex = 0;
 			pulseMetronome();
 			metronomeTimer = window.setInterval(pulseMetronome, 60000 / bpm);
 		};
@@ -269,6 +572,9 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 		speedInput?.addEventListener('input', (event) => {
 			if (event.currentTarget instanceof HTMLInputElement) {
 				speedMultiplier = getSpeedMultiplierFromSlider(Number(event.currentTarget.value));
+				if (playbackAnimation) {
+					playbackAnimation.playbackRate = speedMultiplier;
+				}
 			}
 		});
 
@@ -289,51 +595,93 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 			}
 		});
 
-		lines.forEach((line) => {
+		metronomeSoundButton?.addEventListener('click', async () => {
+			metronomeSoundEnabled = !metronomeSoundEnabled;
+			updateMetronomeSoundButton();
+
+			if (metronomeSoundEnabled) {
+				await resumeMetronomeAudioContext();
+			}
+		});
+
+		lineElements.forEach((line, index) => {
 			line.addEventListener('click', () => {
-				if (!(surface instanceof HTMLElement) || !(line instanceof HTMLElement)) {
+				if (!(surface instanceof HTMLElement)) {
 					return;
 				}
 
-				currentScrollTop = Math.max(0, line.offsetTop - surface.clientHeight * 0.32);
-				manualHoldUntil = performance.now() + 450;
-				suppressManualScrollHold = true;
-				surface.scrollTo({ top: currentScrollTop, behavior: 'smooth' });
+				const resumePlayback = isRunning;
+				stopScrollPlayback();
+				applyOffset(lineOffsets[index] ?? currentOffset);
+
+				if (resumePlayback) {
+					startScrollPlayback();
+				}
 			});
 		});
 
-		surface?.addEventListener('scroll', () => {
-			if (!(surface instanceof HTMLElement)) {
+		surface?.addEventListener('pointerdown', (event) => {
+			if (!(event instanceof PointerEvent) || !event.isPrimary) {
 				return;
 			}
 
-			currentScrollTop = surface.scrollTop;
-			if (suppressManualScrollHold) {
-				suppressManualScrollHold = false;
+			if (event.pointerType === 'mouse' && event.button !== 0) {
 				return;
 			}
-			manualHoldUntil = performance.now() + 350;
+
+			beginDrag(event.clientY, event.pointerId);
+			surface.setPointerCapture?.(event.pointerId);
+		}, { passive: true });
+
+		surface?.addEventListener('pointermove', (event) => {
+			if (!(event instanceof PointerEvent) || dragPointerId !== event.pointerId) {
+				return;
+			}
+
+			updateDrag(event.clientY);
 		});
 
-		surface?.addEventListener('pointerdown', (event) => {
-			if (!(event instanceof PointerEvent)) {
+		surface?.addEventListener('pointerup', (event) => {
+			if (event instanceof PointerEvent) {
+				endDrag(event.pointerId);
+			}
+		});
+
+		surface?.addEventListener('pointercancel', (event) => {
+			if (event instanceof PointerEvent) {
+				endDrag(event.pointerId);
+			}
+		});
+
+		surface?.addEventListener('wheel', (event) => {
+			if (!(event instanceof WheelEvent)) {
 				return;
 			}
 
-			manualHoldUntil = performance.now() + 600;
+			resumeAfterDrag = false;
+			stopScrollPlayback();
+			applyOffset(currentOffset - event.deltaY);
 		}, { passive: true });
 
-		surface?.addEventListener('touchmove', () => {
-			manualHoldUntil = performance.now() + 600;
-		}, { passive: true });
+		updateMetronomeSoundButton();
+		syncScreenWakeLock();
+		document.addEventListener('visibilitychange', () => {
+			if (document.visibilityState === 'visible') {
+				syncScreenWakeLock();
+				return;
+			}
 
-		surface?.addEventListener('wheel', () => {
-			manualHoldUntil = performance.now() + 450;
-		}, { passive: true });
+			void releaseScreenWakeLock();
+		});
 
 		setInitialPosition();
 		window.addEventListener('resize', () => {
+			const resumePlayback = isRunning;
+			stopScrollPlayback();
 			setInitialPosition();
+			if (resumePlayback) {
+				startScrollPlayback();
+			}
 		});
 	</script>
 </Layout>
@@ -345,11 +693,17 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 
 	.play-shell {
 		width: min(100%, 920px);
-		height: 100dvh;
+		height: 100vh;
 		padding: 0.75rem;
 		display: grid;
 		grid-template-rows: minmax(0, 1fr) auto;
 		gap: 0.75rem;
+	}
+
+	@supports (height: 100dvh) {
+		.play-shell {
+			height: 100dvh;
+		}
 	}
 
 	p,
@@ -477,9 +831,14 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 
 	.play-surface {
 		min-height: 0;
-		overflow-y: auto;
-		scroll-behavior: smooth;
+		overflow: hidden;
+		touch-action: none;
+		cursor: grab;
 		padding: 26vh 0 24vh;
+	}
+
+	.play-surface.is-dragging {
+		cursor: grabbing;
 	}
 
 	.play-lyrics {
@@ -491,6 +850,9 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 		gap: 0.7rem;
 		font-size: clamp(1.55rem, 4.1vw, 2.75rem);
 		line-height: 1.25;
+		transform: translate3d(0, 0, 0);
+		will-change: transform;
+		backface-visibility: hidden;
 	}
 
 	.play-line {
