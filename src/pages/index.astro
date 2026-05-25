@@ -9,40 +9,27 @@ const artistGroups = groupSongsByArtist(songs);
 <Layout title="Lyrics Workbench" description="Browse songs by title or artist and open a minimal play view.">
 	<main class="shell">
 		<section class="hero panel">
-			<div>
-				<p class="eyebrow">Repo-driven practice library</p>
-				<h1>Lyrics, chords, and capo notes with a clean play view.</h1>
-				<p class="lead">
-					Add one Markdown file per song, commit, and push. The site rebuilds the song directory and artist list automatically.
-				</p>
-			</div>
-			<div class="hero__actions">
-				<label class="search panel" for="song-search">
-					<span class="eyebrow">Find a song</span>
-					<input id="song-search" type="search" placeholder="Search title or artist" autocomplete="off" data-song-search />
-				</label>
-				<div class="hero__meta">
-					<div class="metric">
-						<strong>{songs.length}</strong>
-						<span>Songs</span>
-					</div>
-					<div class="metric">
-						<strong>{artistGroups.length}</strong>
-						<span>Artists</span>
-					</div>
+			<label class="search" for="song-search">
+				<input id="song-search" type="search" placeholder="Search title or artist" autocomplete="off" data-song-search />
+			</label>
+			<div class="hero__meta">
+				<div class="metric">
+					<strong>{songs.length}</strong>
+					<span>Songs</span>
+				</div>
+				<div class="metric">
+					<strong>{artistGroups.length}</strong>
+					<span>Artists</span>
 				</div>
 			</div>
 		</section>
 
 		<section class="song-grid" aria-label="Song browser">
-			<div class="song-list panel">
-				<div class="section-heading">
-					<div>
-						<p class="eyebrow">Song name</p>
-						<h2>All songs</h2>
-					</div>
-					<p class="section-copy">Search filters this list instantly in the browser.</p>
-				</div>
+			<details class="song-list panel" open>
+				<summary class="section-heading">
+					<h2>Songs</h2>
+					<span class="section-copy">Search filters this list instantly in the browser.</span>
+				</summary>
 				<ul class="cards" data-song-list>
 					{
 						songs.map((song) => (
@@ -65,16 +52,13 @@ const artistGroups = groupSongsByArtist(songs);
 						))
 					}
 				</ul>
-			</div>
+			</details>
 
-			<div class="artist-list panel">
-				<div class="section-heading">
-					<div>
-						<p class="eyebrow">Browse by artist</p>
-						<h2>Artists</h2>
-					</div>
-					<p class="section-copy">Jump straight into play mode from each artist grouping.</p>
-				</div>
+			<details class="artist-list panel" open>
+				<summary class="section-heading">
+					<h2>Artists</h2>
+					<span class="section-copy">Jump straight into play mode from each artist grouping.</span>
+				</summary>
 				<div class="artist-groups">
 					{
 						artistGroups.map((group) => (
@@ -94,18 +78,9 @@ const artistGroups = groupSongsByArtist(songs);
 						))
 					}
 				</div>
-			</div>
+			</details>
 		</section>
 
-		<section class="workflow panel">
-			<div>
-				<p class="eyebrow">Add songs</p>
-				<h2>Commit Markdown files, rebuild automatically.</h2>
-			</div>
-			<p>
-				Store songs under <code>src/content/songs</code> with frontmatter for artist, BPM, capo, chords, and notes. Lyrics live in the body, one line per line.
-			</p>
-		</section>
 	</main>
 
 	<script>
@@ -132,41 +107,22 @@ const artistGroups = groupSongsByArtist(songs);
 <style>
 	.hero {
 		display: grid;
-		grid-template-columns: 1.4fr 0.9fr;
+		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 1.5rem;
 		padding: 1.5rem;
 		margin-bottom: 1.5rem;
+		align-items: end;
 	}
 
-	h1,
 	h2,
 	h3,
 	p {
 		margin: 0;
 	}
 
-	h1 {
-		font-size: clamp(2.2rem, 5vw, 4.6rem);
-		line-height: 0.95;
-		max-width: 12ch;
-	}
-
-	.lead {
-		margin-top: 1rem;
-		max-width: 50ch;
-		color: var(--muted);
-		font-size: 1.05rem;
-	}
-
-	.hero__actions {
-		display: grid;
-		gap: 1rem;
-	}
-
 	.search {
-		display: grid;
-		gap: 0.75rem;
-		padding: 1rem;
+		display: block;
+		margin: 0;
 	}
 
 	.search input {
@@ -174,7 +130,12 @@ const artistGroups = groupSongsByArtist(songs);
 		padding: 0.9rem 1rem;
 		border-radius: 16px;
 		border: 1px solid var(--line);
-		background: rgba(255, 255, 255, 0.78);
+		background: rgba(12, 17, 22, 0.92);
+		color: var(--ink);
+	}
+
+	.search input::placeholder {
+		color: var(--muted);
 	}
 
 	.hero__meta {
@@ -199,8 +160,7 @@ const artistGroups = groupSongsByArtist(songs);
 	.section-copy,
 	.song-card__artist,
 	.song-card__meta,
-	.artist-group span,
-	.workflow p {
+	.artist-group span {
 		color: var(--muted);
 	}
 
@@ -211,19 +171,37 @@ const artistGroups = groupSongsByArtist(songs);
 	}
 
 	.song-list,
-	.artist-list,
-	.workflow {
+	.artist-list {
 		padding: 1.5rem;
 	}
 
 	.section-heading,
 	.artist-group__header,
-	.song-card,
-	.workflow {
+	.song-card {
 		display: flex;
 		align-items: start;
 		justify-content: space-between;
 		gap: 1rem;
+	}
+
+	.section-heading {
+		cursor: pointer;
+		list-style: none;
+	}
+
+	.section-heading::-webkit-details-marker {
+		display: none;
+	}
+
+	.section-heading::after {
+		content: '+';
+		font-size: 1.35rem;
+		line-height: 1;
+		color: var(--muted);
+	}
+
+	details[open] > .section-heading::after {
+		content: '\2212';
 	}
 
 	.cards,
@@ -249,8 +227,7 @@ const artistGroups = groupSongsByArtist(songs);
 	}
 
 	.song-card h3,
-	.artist-group h3,
-	.workflow h2 {
+	.artist-group h3 {
 		font-size: 1.15rem;
 	}
 
@@ -272,18 +249,6 @@ const artistGroups = groupSongsByArtist(songs);
 		text-underline-offset: 0.18rem;
 	}
 
-	.workflow {
-		margin-top: 1.5rem;
-		padding: 1.2rem 1.5rem;
-		align-items: center;
-	}
-
-	code {
-		padding: 0.15rem 0.4rem;
-		border-radius: 8px;
-		background: var(--accent-soft);
-	}
-
 	[hidden] {
 		display: none !important;
 	}
@@ -293,26 +258,24 @@ const artistGroups = groupSongsByArtist(songs);
 		.song-grid {
 			grid-template-columns: 1fr;
 		}
+
+		.hero__meta {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
 	}
 
 	@media (max-width: 720px) {
 		.hero,
 		.song-list,
-		.artist-list,
-		.workflow {
+		.artist-list {
 			padding: 1rem;
 		}
 
 		.song-card,
 		.artist-group,
-		.workflow,
 		.section-heading,
 		.artist-group__header {
 			flex-direction: column;
-		}
-
-		h1 {
-			max-width: none;
 		}
 	}
 </style>

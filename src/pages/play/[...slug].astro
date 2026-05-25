@@ -74,7 +74,7 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 			</div>
 			<label class="speed-control">
 				<span>Scroll speed</span>
-				<input type="range" min="0.5" max="2" value="1" step="0.05" data-speed />
+				<input type="range" min="0" max="100" value="50" step="1" data-speed />
 			</label>
 		</footer>
 	</main>
@@ -89,9 +89,21 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 		const metronomeLabel = document.querySelector('[data-metronome-label]');
 		const lines = [...document.querySelectorAll('[data-line]')];
 
+		const getSpeedMultiplierFromSlider = (value) => {
+			if (!Number.isFinite(value)) {
+				return 1;
+			}
+
+			if (value <= 50) {
+				return 0.5 + (value / 50) * 0.5;
+			}
+
+			return 1 + ((value - 50) / 50) * 1;
+		};
+
 		let isRunning = false;
 		let metronomeRunning = false;
-		let speedMultiplier = speedInput instanceof HTMLInputElement ? Number(speedInput.value) : 1;
+		let speedMultiplier = speedInput instanceof HTMLInputElement ? getSpeedMultiplierFromSlider(Number(speedInput.value)) : 1;
 		let bpm = controls instanceof HTMLElement ? Number(controls.dataset.bpm ?? '0') : 0;
 		let durationSeconds = controls instanceof HTMLElement ? Number(controls.dataset.durationSeconds ?? '0') : 0;
 		let lastTimestamp = 0;
@@ -256,7 +268,7 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 
 		speedInput?.addEventListener('input', (event) => {
 			if (event.currentTarget instanceof HTMLInputElement) {
-				speedMultiplier = Number(event.currentTarget.value);
+				speedMultiplier = getSpeedMultiplierFromSlider(Number(event.currentTarget.value));
 			}
 		});
 
@@ -359,15 +371,15 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 	}
 
 	.play-controls.is-metronome-active {
-		background: rgba(27, 19, 15, 0.045);
-		border-color: rgba(27, 19, 15, 0.12);
-		box-shadow: 0 24px 60px rgba(44, 26, 17, 0.12), inset 0 0 0 1px rgba(27, 19, 15, 0.03);
+		background: rgba(29, 36, 45, 0.94);
+		border-color: rgba(244, 239, 230, 0.12);
+		box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32), inset 0 0 0 1px rgba(244, 239, 230, 0.03);
 	}
 
 	.play-controls.is-beating {
 		background: rgba(182, 90, 42, 0.08);
 		border-color: rgba(182, 90, 42, 0.16);
-		box-shadow: 0 24px 60px rgba(44, 26, 17, 0.14), inset 0 0 0 1px rgba(182, 90, 42, 0.06);
+		box-shadow: 0 24px 60px rgba(0, 0, 0, 0.34), inset 0 0 0 1px rgba(182, 90, 42, 0.06);
 	}
 
 	.transport-row {
@@ -386,6 +398,44 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 
 	.speed-control input {
 		width: 100%;
+		appearance: none;
+		height: 0.45rem;
+		border-radius: 999px;
+		background: rgba(244, 239, 230, 0.18);
+		outline: none;
+	}
+
+	.speed-control input::-webkit-slider-runnable-track {
+		height: 0.45rem;
+		border-radius: 999px;
+		background: rgba(244, 239, 230, 0.18);
+	}
+
+	.speed-control input::-webkit-slider-thumb {
+		appearance: none;
+		width: 1rem;
+		height: 1rem;
+		margin-top: -0.275rem;
+		border-radius: 999px;
+		border: 1px solid rgba(9, 12, 16, 0.75);
+		background: #f4efe6;
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+	}
+
+	.speed-control input::-moz-range-track {
+		height: 0.45rem;
+		border: none;
+		border-radius: 999px;
+		background: rgba(244, 239, 230, 0.18);
+	}
+
+	.speed-control input::-moz-range-thumb {
+		width: 1rem;
+		height: 1rem;
+		border-radius: 999px;
+		border: 1px solid rgba(9, 12, 16, 0.75);
+		background: #f4efe6;
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
 	}
 
 	.icon-button {
@@ -398,7 +448,7 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 		border: 1px solid var(--line);
 		background: var(--surface-strong);
 		color: var(--ink);
-		box-shadow: 0 10px 24px rgba(44, 26, 17, 0.08);
+		box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
 	}
 
 	.icon-button svg {
@@ -410,7 +460,7 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 	.icon-button.is-active {
 		background: var(--accent);
 		border-color: transparent;
-		color: #fff7f1;
+		color: #140e09;
 	}
 
 	.icon-pause {
@@ -445,7 +495,7 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 
 	.play-line {
 		padding: 0.35rem 0.25rem;
-		color: rgba(27, 19, 15, 0.42);
+		color: var(--ink);
 		transition: color 140ms ease;
 		border-radius: 14px;
 	}
@@ -454,6 +504,7 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 		min-height: 1rem;
 		background: transparent;
 		box-shadow: none;
+		color: transparent;
 	}
 
 	@media (max-width: 720px) {

@@ -74,8 +74,6 @@ Notes:
 The build generates these pages from your content files:
 
 - `/` for the searchable song library
-- `/artist/<artist-slug>/` for artist group pages
-- `/song/<artist-folder>/<song-file>/` for the full song sheet
 - `/play/<artist-folder>/<song-file>/` for the focused performance view
 
 ## Playback View
@@ -85,6 +83,7 @@ The play page is designed for tablet or phone use:
 - Large lyric text
 - Continuous auto-scroll based on total song duration
 - Adjustable speed multiplier around the song-duration baseline
+- Manual touch or scrollbar repositioning that autoplay can resume from
 - Tap any lyric line to jump that line closer to center
 
 ## Publishing
@@ -102,7 +101,7 @@ For a repo-driven workflow:
 
 GitHub Pages is the easiest one-click option from VS Code because a normal push can trigger deployment automatically.
 
-This repo now includes [deploy-pages.yml](.github/workflows/deploy-pages.yml), which will build and publish the site whenever you push to `main`.
+This repo now includes [deploy-pages.yml](.github/workflows/deploy-pages.yml), which will build and publish the site whenever you push to `master`.
 
 Setup once in GitHub:
 
@@ -110,7 +109,7 @@ Setup once in GitHub:
 2. Open the repository settings.
 3. Go to Pages.
 4. Set the source to GitHub Actions.
-5. Push to `main` from VS Code whenever you want to publish.
+5. Push to `master` from VS Code whenever you want to publish.
 
 From that point on, your one-click workflow in VS Code is effectively your normal Git push or sync action.
 

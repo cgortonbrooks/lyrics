@@ -19,8 +19,7 @@ const {
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<link rel="icon" type="image/svg+xml" href={withBase('favicon.svg')} />
-		<link rel="icon" href={withBase('favicon.ico')} />
+		<link rel="icon" type="image/png" href={withBase('8332396.png')} />
 		<meta name="generator" content={Astro.generator} />
 		<meta name="description" content={description} />
 		<title>{title}</title>
@@ -32,17 +31,17 @@ const {
 
 <style is:global>
 	:root {
-		color-scheme: light;
-		--bg: #f6f1e7;
-		--bg-strong: #ece2d1;
-		--surface: rgba(255, 252, 247, 0.82);
-		--surface-strong: #fffaf2;
-		--ink: #1b130f;
-		--muted: #64554a;
-		--line: rgba(61, 43, 29, 0.12);
-		--accent: #b65a2a;
-		--accent-soft: rgba(182, 90, 42, 0.14);
-		--shadow: 0 24px 60px rgba(44, 26, 17, 0.12);
+		color-scheme: dark;
+		--bg: #0b0f12;
+		--bg-strong: #11171d;
+		--surface: rgba(18, 24, 31, 0.88);
+		--surface-strong: #171e26;
+		--ink: #f4efe6;
+		--muted: #b8afa0;
+		--line: rgba(215, 201, 180, 0.16);
+		--accent: #d98b46;
+		--accent-soft: rgba(217, 139, 70, 0.18);
+		--shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
 		font-family: 'Avenir Next', 'Segoe UI', sans-serif;
 	}
 
@@ -54,9 +53,7 @@ const {
 	body {
 		margin: 0;
 		min-height: 100%;
-		background:
-			radial-gradient(circle at top, rgba(255, 255, 255, 0.65), transparent 32%),
-			linear-gradient(180deg, #f8f3ea 0%, #efe4d2 100%);
+		background: linear-gradient(180deg, #0d1218 0%, #090c10 100%);
 		color: var(--ink);
 	}
 
@@ -115,7 +112,7 @@ const {
 	.button--accent {
 		background: var(--accent);
 		border-color: transparent;
-		color: #fff7f1;
+		color: #1a120d;
 	}
 
 	.lyrics-font {
