@@ -1,8 +1,8 @@
 ---
 title: Clay Pigeons
 artist: John Prine
-duration: 4:27
-bpm: 81
+duration: 4:24
+bpm: 140
 capo: 3rd
 chords:
   - G

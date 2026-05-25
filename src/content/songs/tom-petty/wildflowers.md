@@ -3,7 +3,7 @@ title: Wildflowers
 artist: Tom Petty
 duration: 3:09
 bpm: 86
-capo: 5
+capo: 5th
 chords:
   - F
   - C

@@ -1,13 +1,14 @@
 ---
-title: You Got the Silver
+title: Sweet Virginia
 artist: The Rolling Stones
-duration: 2:50
-bpm: 144
+duration: 4:27
+bpm: 107
 capo: 2nd
 chords:
-  - D
-  - G
+  - C
   - A
+  - G
+  - D
 notes: n/a
 key: D
 tuning: Standard
