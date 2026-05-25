@@ -13,6 +13,14 @@ export async function getStaticPaths() {
 
 const { song } = Astro.props;
 const lines = getSongLines(song);
+const songInfoItems = [
+	{ label: 'Key', value: song.data.key },
+	{ label: 'Capo', value: String(song.data.capo ?? 'None') },
+	{ label: 'Tuning', value: song.data.tuning },
+	{ label: 'BPM', value: String(song.data.bpm) },
+	{ label: 'Duration', value: song.data.duration },
+	{ label: 'Notes', value: song.data.notes },
+].filter((item) => typeof item.value === 'string' && item.value.trim().length > 0);
 
 function parseDurationToSeconds(duration: string) {
 	const [minutesText, secondsText] = duration.split(':');
@@ -80,11 +88,62 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 					</svg>
 					<span class="visually-hidden" data-metronome-sound-label>Enable tic toc</span>
 				</button>
+				<button class="icon-button" type="button" data-toggle-info aria-expanded="false" aria-controls="song-info-modal" aria-label="Show song info" title="Show song info">
+					<svg viewBox="0 0 24 24" aria-hidden="true">
+						<circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+						<path d="M12 10.25v5.25" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path>
+						<circle cx="12" cy="7.5" r="1" fill="currentColor"></circle>
+					</svg>
+					<span class="visually-hidden">Show song info</span>
+				</button>
 			</div>
 			<label class="speed-control">
 				<input type="range" min="0" max="100" value="50" step="1" data-speed aria-label="Scroll speed" />
 			</label>
 		</footer>
+
+		<div class="info-modal" data-info-modal hidden>
+			<div class="info-modal__backdrop" data-info-close></div>
+			<section class="info-modal__panel panel" id="song-info-modal" role="dialog" aria-modal="true" aria-labelledby="song-info-title">
+				<header class="info-modal__header">
+					<div>
+						<p class="info-modal__eyebrow">Song Info</p>
+						<h2 class="info-modal__title" id="song-info-title">{song.data.title}</h2>
+						<p class="info-modal__subtitle">{song.data.artist}</p>
+					</div>
+					<button class="icon-button info-modal__close" type="button" data-info-close aria-label="Close song info" title="Close song info">
+						<svg viewBox="0 0 24 24" aria-hidden="true">
+							<path d="M7 7 17 17" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path>
+							<path d="M17 7 7 17" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path>
+						</svg>
+					</button>
+				</header>
+
+				<div class="info-modal__body">
+					<dl class="info-grid">
+						{
+							songInfoItems.map((item) => (
+								<div class="info-grid__item">
+									<dt>{item.label}</dt>
+									<dd>{item.value}</dd>
+								</div>
+							))
+						}
+					</dl>
+
+					{
+						song.data.chords.length > 0 && (
+							<section class="info-section">
+								<h3>Chords</h3>
+								<ul class="chord-list" aria-label="Song chords">
+									{song.data.chords.map((chord) => <li>{chord}</li>)}
+								</ul>
+							</section>
+						)
+					}
+				</div>
+			</section>
+		</div>
 	</main>
 
 	<script>
@@ -98,6 +157,9 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 		const metronomeLabel = document.querySelector('[data-metronome-label]');
 		const metronomeSoundButton = document.querySelector('[data-toggle-metronome-sound]');
 		const metronomeSoundLabel = document.querySelector('[data-metronome-sound-label]');
+		const infoButton = document.querySelector('[data-toggle-info]');
+		const infoModal = document.querySelector('[data-info-modal]');
+		const infoCloseButtons = [...document.querySelectorAll('[data-info-close]')];
 		const lines = [...document.querySelectorAll('[data-line]')];
 		const lineElements = lines.filter((line) => line instanceof HTMLElement);
 
@@ -135,6 +197,7 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 		let dragStartY = 0;
 		let dragStartOffset = 0;
 		let resumeAfterDrag = false;
+		let infoWasOpen = false;
 
 		const getDurationMs = () => Math.max(1000, durationSeconds * 1000);
 		const canUseWakeLock = typeof navigator !== 'undefined' && 'wakeLock' in navigator;
@@ -176,6 +239,30 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 			}
 
 			void releaseScreenWakeLock();
+		};
+
+		const isInfoModalOpen = () => infoModal instanceof HTMLElement && !infoModal.hasAttribute('hidden');
+
+		const openInfoModal = () => {
+			if (!(infoModal instanceof HTMLElement)) {
+				return;
+			}
+
+			infoModal.removeAttribute('hidden');
+			infoModal.classList.add('is-open');
+			infoButton?.classList.add('is-active');
+			infoButton?.setAttribute('aria-expanded', 'true');
+		};
+
+		const closeInfoModal = () => {
+			if (!(infoModal instanceof HTMLElement)) {
+				return;
+			}
+
+			infoModal.setAttribute('hidden', '');
+			infoModal.classList.remove('is-open');
+			infoButton?.classList.remove('is-active');
+			infoButton?.setAttribute('aria-expanded', 'false');
 		};
 
 		const clampOffset = (value) => {
@@ -367,6 +454,10 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 				return;
 			}
 
+			infoWasOpen = isInfoModalOpen();
+			if (infoWasOpen) {
+				closeInfoModal();
+			}
 			resumeAfterDrag = isRunning;
 			stopScrollPlayback();
 			dragPointerId = pointerId;
@@ -397,6 +488,11 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 
 			if (shouldResumePlayback) {
 				startScrollPlayback();
+			}
+
+			if (infoWasOpen) {
+				openInfoModal();
+				infoWasOpen = false;
 			}
 		};
 
@@ -600,6 +696,27 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 
 			if (metronomeSoundEnabled) {
 				await resumeMetronomeAudioContext();
+			}
+		});
+
+		infoButton?.addEventListener('click', () => {
+			if (isInfoModalOpen()) {
+				closeInfoModal();
+				return;
+			}
+
+			openInfoModal();
+		});
+
+		infoCloseButtons.forEach((button) => {
+			button.addEventListener('click', () => {
+				closeInfoModal();
+			});
+		});
+
+		document.addEventListener('keydown', (event) => {
+			if (event.key === 'Escape' && isInfoModalOpen()) {
+				closeInfoModal();
 			}
 		});
 
@@ -828,6 +945,127 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 		display: block;
 	}
 
+	.info-modal[hidden] {
+		display: none;
+	}
+
+	.info-modal {
+		position: fixed;
+		inset: 0;
+		z-index: 40;
+		display: grid;
+		place-items: end center;
+		padding: 1rem;
+	}
+
+	.info-modal__backdrop {
+		position: absolute;
+		inset: 0;
+		background: rgba(4, 7, 10, 0.64);
+		backdrop-filter: blur(10px);
+	}
+
+	.info-modal__panel {
+		position: relative;
+		width: min(100%, 34rem);
+		max-height: min(78vh, 42rem);
+		overflow: auto;
+		padding: 1.1rem;
+		display: grid;
+		gap: 1rem;
+		box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+	}
+
+	.info-modal__header {
+		display: flex;
+		align-items: start;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+
+	.info-modal__eyebrow {
+		color: var(--muted);
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		font-size: 0.72rem;
+	}
+
+	.info-modal__title {
+		margin: 0.2rem 0 0;
+		font-size: 1.2rem;
+	}
+
+	.info-modal__subtitle {
+		margin-top: 0.2rem;
+		color: var(--muted);
+	}
+
+	.info-modal__close {
+		width: 2.7rem;
+		height: 2.7rem;
+		flex: 0 0 auto;
+	}
+
+	.info-modal__body {
+		display: grid;
+		gap: 1rem;
+	}
+
+	.info-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.75rem;
+		margin: 0;
+	}
+
+	.info-grid__item {
+		padding: 0.8rem 0.9rem;
+		border-radius: 16px;
+		background: rgba(244, 239, 230, 0.045);
+		border: 1px solid rgba(244, 239, 230, 0.08);
+	}
+
+	.info-grid__item dt {
+		color: var(--muted);
+		font-size: 0.78rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	.info-grid__item dd {
+		margin: 0.35rem 0 0;
+		font-size: 1rem;
+	}
+
+	.info-section {
+		display: grid;
+		gap: 0.65rem;
+	}
+
+	.info-section h3 {
+		margin: 0;
+		font-size: 0.92rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--muted);
+	}
+
+	.chord-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.55rem;
+	}
+
+	.chord-list li {
+		padding: 0.45rem 0.72rem;
+		border-radius: 999px;
+		background: rgba(182, 90, 42, 0.12);
+		border: 1px solid rgba(182, 90, 42, 0.18);
+	}
+
 	.play-surface {
 		min-height: 0;
 		overflow: hidden;
@@ -888,6 +1126,19 @@ const durationSeconds = parseDurationToSeconds(song.data.duration);
 
 		.play-lyrics {
 			max-width: 100%;
+		}
+
+		.info-modal {
+			padding: 0.65rem;
+		}
+
+		.info-modal__panel {
+			max-height: 82vh;
+			padding: 0.95rem;
+		}
+
+		.info-grid {
+			grid-template-columns: minmax(0, 1fr);
 		}
 	}
 </style>
