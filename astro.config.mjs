@@ -11,4 +11,7 @@ const defaultBase = isGitHubActions && repositoryName && !repositoryName.endsWit
 export default defineConfig({
 	output: 'static',
 	base: process.env.DEPLOY_BASE ?? defaultBase,
+	devToolbar: {
+		enabled: false,
+	},
 });
