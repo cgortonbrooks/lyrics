@@ -10,7 +10,7 @@ chords:
   - E7
   - A
 key: A
-tuning: Drop D
+tuning: Standard
 tags:
   - strumming
 ---
